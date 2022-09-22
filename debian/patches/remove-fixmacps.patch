@@ -1,0 +1,72 @@
+Description: remove references to non-dfsg files
+ Non-dfsg files were removed from the upstream sources which were repackaged.
+ This patch modifies the makefile to avoid installing them.
+Author: Jay Berkenbilt <qjb@debian.org>
+Bug-Debian: http://bugs.debian.org/682708
+
+Index: psutils-1.17.dfsg/Makefile
+===================================================================
+--- psutils-1.17.dfsg.orig/Makefile	2012-08-25 06:25:29.317367957 -0400
++++ psutils-1.17.dfsg/Makefile	2012-08-25 06:25:32.757367863 -0400
+@@ -45,15 +45,14 @@
+ BIN = psbook psselect pstops epsffit psnup \
+ 	psresize
+ SHELLSCRIPTS = getafm showchar
+-PERLSCRIPTS = fixfmps fixmacps fixpsditps fixpspps \
++PERLSCRIPTS = fixfmps fixpsditps fixpspps \
+ 	fixtpps fixwfwps fixwpps fixscribeps fixwwps \
+ 	fixdlsrps extractres includeres psmerge
+ MANPAGES = psbook.$(MANEXT) psselect.$(MANEXT) pstops.$(MANEXT) epsffit.$(MANEXT) psnup.$(MANEXT) \
+ 	psresize.$(MANEXT) psmerge.$(MANEXT) fixscribeps.$(MANEXT) getafm.$(MANEXT) \
+-	fixdlsrps.$(MANEXT) fixfmps.$(MANEXT) fixmacps.$(MANEXT) fixpsditps.$(MANEXT) \
++	fixdlsrps.$(MANEXT) fixfmps.$(MANEXT) fixpsditps.$(MANEXT) \
+ 	fixpspps.$(MANEXT) fixtpps.$(MANEXT) fixwfwps.$(MANEXT) fixwpps.$(MANEXT) \
+ 	fixwwps.$(MANEXT) extractres.$(MANEXT) includeres.$(MANEXT)
+-INCLUDES = md68_0.ps md71_0.ps
+ 
+ all: $(BIN) $(PERLSCRIPTS) $(MANPAGES) $(SHELLSCRIPTS)
+ 
+@@ -107,10 +106,6 @@
+ 	$(PERL) maketext OS=$(OS) PERL=$(PERL) $? > $@
+ 	$(CHMOD) $(BINMODE) $@
+ 
+-fixmacps: fixmacps.pl
+-	$(PERL) maketext OS=$(OS) PERL=$(PERL) INCLUDE=$(INCLUDEDIR) $? > $@
+-	$(CHMOD) $(BINMODE) $@
+-
+ fixpsditps: fixpsditps.pl
+ 	$(PERL) maketext OS=$(OS) PERL=$(PERL) $? > $@
+ 	$(CHMOD) $(BINMODE) $@
+@@ -175,9 +170,6 @@
+ fixfmps.$(MANEXT): fixfmps.man
+ 	$(PERL) maketext "MAN=$(MANPAGES)" $? > $@
+ 
+-fixmacps.$(MANEXT): fixmacps.man
+-	$(PERL) maketext "MAN=$(MANPAGES)" INCLUDE=$(INCLUDEDIR) $? > $@
+-
+ fixpsditps.$(MANEXT): fixpsditps.man
+ 	$(PERL) maketext "MAN=$(MANPAGES)" $? > $@
+ 
+@@ -217,7 +209,7 @@
+ veryclean realclean: clean
+ 	rm -f $(BIN) $(PERLSCRIPTS) $(MANPAGES)
+ 
+-install: install.bin install.script install.man install.include
++install: install.bin install.script install.man
+ 
+ install.bin: $(BIN)
+ 	-mkdir $(BINDIR)
+@@ -233,13 +225,6 @@
+ 		$(INSTALL) $$i $(SCRIPTDIR); \
+ 	done
+ 
+-install.include: $(INCLUDES)
+-	-mkdir $(INCLUDEDIR)
+-	@for i in $(INCLUDES); do \
+-		echo Installing $$i; \
+-		$(INSTALLMAN) $$i $(INCLUDEDIR); \
+-	done
+-
+ install.man: $(MANPAGES)
+ 	-mkdir $(MANDIR)
+ 	@for i in $(MANPAGES); do \

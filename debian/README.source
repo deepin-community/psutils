@@ -1,0 +1,11 @@
+The original upstream distribution includes two files of questionable
+copyright: md68_0.ps and md71_0.ps.  These files have been removed
+from the distribution along with things that depend on them.  The
+following exact steps were taken:
+
+rm md68_0.ps md71_0.ps fixmacps.man fixmacps.pl
+
+Changes to the Makefile to avoid installing these files are made with
+a patch.
+
+ -- Jay Berkenbilt <qjb@debian.org>, Sat, 25 Aug 2012 06:17:36 -0400

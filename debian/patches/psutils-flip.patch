@@ -1,0 +1,122 @@
+Patch for pstops from psutils to allow page flipping (i. e. mirroring).
+Useful for creating of print matrices on transparent films.
+
+http://www.penguin.cz/~utx
+ftp://ftp.penguin.cz/pub/users/utx/psutils/psutils-flip.diff
+
+Index: psutils-1.17.dfsg/pstops.c
+===================================================================
+--- psutils-1.17.dfsg.orig/pstops.c	2012-08-25 06:25:32.961367859 -0400
++++ psutils-1.17.dfsg/pstops.c	2012-08-25 06:25:33.789367837 -0400
+@@ -42,7 +42,7 @@
+ {
+    fprintf(stderr, "%s: page specification error:\n", program);
+    fprintf(stderr, "  <pagespecs> = [modulo:]<spec>\n");
+-   fprintf(stderr, "  <spec>      = [-]pageno[@scale][L|R|U][(xoff,yoff)][,spec|+spec]\n");
++   fprintf(stderr, "  <spec>      = [-]pageno[@scale][L|R|U|H|V][(xoff,yoff)][,spec|+spec]\n");
+    fprintf(stderr, "                modulo>=1, 0<=pageno<modulo\n");
+    fflush(stderr);
+    exit(1);
+@@ -87,6 +87,14 @@
+ 	    tail->rotate += 180;
+ 	    tail->flags |= ROTATE;
+ 	    break;
++	 case 'h': case 'H':
++	    tail->hflip += 1;
++	    tail->flags |= HFLIP;
++	    break;
++	 case 'v': case 'V':
++	    tail->vflip += 1;
++	    tail->flags |= VFLIP;
++	    break;
+ 	 case '(':
+ 	    tail->xoff += parsedimen(&str, argerror);
+ 	    if (*str++ != ',') argerror();
+Index: psutils-1.17.dfsg/psspec.h
+===================================================================
+--- psutils-1.17.dfsg.orig/psspec.h	2012-08-25 06:25:33.657367838 -0400
++++ psutils-1.17.dfsg/psspec.h	2012-08-25 06:25:33.789367837 -0400
+@@ -8,12 +8,14 @@
+ /* pagespec flags */
+ #define ADD_NEXT (0x01)
+ #define ROTATE   (0x02)
+-#define SCALE    (0x04)
+-#define OFFSET   (0x08)
+-#define GSAVE    (ROTATE|SCALE|OFFSET)
++#define HFLIP    (0x04)
++#define VFLIP    (0x08)
++#define SCALE    (0x10)
++#define OFFSET   (0x20)
++#define GSAVE    (ROTATE|HFLIP|VFLIP|SCALE|OFFSET)
+ 
+ typedef struct pagespec {
+-   int reversed, pageno, flags, rotate;
++   int reversed, pageno, flags, rotate, hflip, vflip;
+    double xoff, yoff, scale;
+    struct pagespec *next;
+ } PageSpec ;
+Index: psutils-1.17.dfsg/psspec.c
+===================================================================
+--- psutils-1.17.dfsg.orig/psspec.c	2012-08-25 06:25:33.657367838 -0400
++++ psutils-1.17.dfsg/psspec.c	2012-08-25 06:25:33.789367837 -0400
+@@ -22,6 +22,8 @@
+    if (temp == NULL)
+       message(FATAL, "out of memory\n");
+    temp->reversed = temp->pageno = temp->flags = temp->rotate = 0;
++   temp->hflip = 0;
++   temp->vflip = 0;
+    temp->scale = 1;
+    temp->xoff = temp->yoff = 0;
+    temp->next = NULL;
+@@ -215,6 +217,14 @@
+ 	       sprintf(buffer, "%d rotate\n", ps->rotate);
+ 	       writestring(buffer);
+ 	    }
++	    if ((ps->flags & HFLIP) && (ps->hflip%2)) {
++	       sprintf(buffer, "[ -1 0 0 1 %f 0 ] concat\n", width*ps->scale);
++	       writestring(buffer);
++	    }
++	    if ((ps->flags & VFLIP) && (ps->vflip%2)) {
++	       sprintf(buffer, "[ 1 0 0 -1 0 %f ] concat\n", height*ps->scale);
++	       writestring(buffer);
++	    }
+ 	    if (ps->flags & SCALE) {
+ 	       sprintf(buffer, "%f dup scale\n", ps->scale);
+ 	       writestring(buffer);
+Index: psutils-1.17.dfsg/pstops.man
+===================================================================
+--- psutils-1.17.dfsg.orig/pstops.man	2012-08-25 06:25:32.965367859 -0400
++++ psutils-1.17.dfsg/pstops.man	2012-08-25 06:25:33.793367837 -0400
+@@ -43,7 +43,7 @@
+ .I = spec[+specs][,specs]
+ .TP
+ .I spec
+-.I = [-]pageno[L][R][U][@scale][(xoff,yoff)]
++.I = [-]pageno[L][R][U][H][V][@scale][(xoff,yoff)]
+ .RE
+ .sp
+ .I modulo
+@@ -74,8 +74,9 @@
+ or
+ .B "h"
+ to specify as a multiple of the width or height.
+-The optional parameters \fIL\fR, \fIR\fR, and \fIU\fR rotate the page left,
+-right, or upside-down.
++The optional parameters \fIL\fR, \fIR\fR, \fIU\fR, \fIH\fR and \fIV\fR
++rotate the page left, right, or upside-down, and flip (mirror) page
++horizontally or vertically.
+ The optional
+ .I scale
+ parameter scales the page by the fraction specified.
+Index: psutils-1.17.dfsg/README
+===================================================================
+--- psutils-1.17.dfsg.orig/README	2012-08-25 06:25:29.037367962 -0400
++++ psutils-1.17.dfsg/README	2012-08-25 06:25:33.793367837 -0400
+@@ -181,6 +181,7 @@
+ 	Mike Coleman
+ 	Dale Scheetz		dwarf@polaris.net
+ 	Yves Arrouye		arrouye@marin.fdn.fr
++	Stanislav Brabec	utx@penguin.cz
+ 
+ (Apologies to anyone who I have left out, it was not intentional.)
+ 

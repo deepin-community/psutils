@@ -1,0 +1,1350 @@
+Foo bar.
+Baz.
+Index: psutils/pstops.c
+===================================================================
+--- psutils.orig/pstops.c
++++ psutils/pstops.c
+@@ -8,11 +8,18 @@
+  *       pstops [-q] [-b] [-d] [-w<dim>] [-h<dim>] [-ppaper] <pagespecs> [infile [outfile]]
+  */
+ 
++#include <unistd.h>
++#include <string.h>
++
+ #include "psutil.h"
+ #include "psspec.h"
+ #include "pserror.h"
+ #include "patchlev.h"
+ 
++#ifdef DEBIAN
++#include <paper.h>
++#endif
++
+ char *program ;
+ int pages ;
+ int verbose ;
+@@ -47,8 +54,8 @@ static int pagesperspec = 1;
+ static PageSpec *parsespecs(char *str)
+ {
+    PageSpec *head, *tail;
+-   int other = 0;
+-   int num = -1;
++   unsigned long spec_count = 0;
++   long num = -1;
+ 
+    head = tail = newspec();
+    while (*str) {
+@@ -57,7 +64,7 @@ static PageSpec *parsespecs(char *str)
+       } else {
+ 	 switch (*str++) {
+ 	 case ':':
+-	    if (other || head != tail || num < 1) argerror();
++	    if (spec_count || head != tail || num < 1) argerror();
+ 	    modulo = num;
+ 	    num = -1;
+ 	    break;
+@@ -65,10 +72,9 @@ static PageSpec *parsespecs(char *str)
+ 	    tail->reversed = !tail->reversed;
+ 	    break;
+ 	 case '@':
+-	    if (num < 0) argerror();
+-	    tail->scale *= parsedouble(&str, argerror);
+-	    tail->flags |= SCALE;
+-	    break;
++            tail->scale *= parsedouble(&str, argerror);
++            tail->flags |= SCALE;
++           break;
+ 	 case 'l': case 'L':
+ 	    tail->rotate += 90;
+ 	    tail->flags |= ROTATE;
+@@ -102,7 +108,7 @@ static PageSpec *parsespecs(char *str)
+ 	 default:
+ 	    argerror();
+ 	 }
+-	 other = 1;
++	 spec_count++;
+       }
+    }
+    if (num >= modulo)
+@@ -112,71 +118,124 @@ static PageSpec *parsespecs(char *str)
+    return (head);
+ }
+ 
+-void main(int argc, char *argv[])
++int
++main(int argc, char *argv[])
+ {
+    PageSpec *specs = NULL;
+    int nobinding = 0;
+    double draw = 0;
+-   Paper *paper;
++   Paper *paper = NULL;
++   int opt;
+ 
+-#ifdef PAPER
++#ifdef DEBIAN
++   paperinit();
++   {
++     const char *default_size = systempapername();
++     if (!default_size) default_size = defaultpapername ();
++     if (default_size) paper = findpaper(default_size);
++     if (paper) {
++       width = (double)PaperWidth(paper);
++       height = (double)PaperHeight(paper);
++     }
++   }
++   paperdone();
++#elif defined(PAPER)
+    if ( (paper = findpaper(PAPER)) != (Paper *)0 ) {
+       width = (double)PaperWidth(paper);
+       height = (double)PaperHeight(paper);
+    }
+ #endif
+ 
++   verbose = 1;
++
++   program = *argv;
++
++   while((opt = getopt(argc, argv, "qd::bw:h:p:v0123456789")) != EOF) {
++     switch(opt) {
++     case 'q':	/* quiet */
++       verbose = 0;
++       break;
++     case 'd':	/* draw borders */
++       if(optarg)
++         draw = singledimen(optarg, argerror, usage);
++       else
++         draw = 1;
++       break;
++     case 'b':	/* no bind operator */
++       nobinding = 1;
++       break;
++     case 'w':	/* page width */
++       width = singledimen(optarg, argerror, usage);
++       break;
++     case 'h':	/* page height */
++       height = singledimen(optarg, argerror, usage);
++       break;
++     case 'p':	/* paper type */
++       if ( (paper = findpaper(optarg)) != (Paper *)0 ) {
++         width = (double)PaperWidth(paper);
++         height = (double)PaperHeight(paper);
++       } else
++         message(FATAL, "paper size '%s' not recognised\n", optarg);
++       break;
++     case 'v':	/* version */
++       usage();
++     case '0':
++     case '1':
++     case '2':
++     case '3':
++     case '4':
++     case '5':
++     case '6':
++     case '7':
++     case '8':
++     case '9':
++       if (specs == NULL) {
++         char *spec_txt = alloca((optarg ? strlen(optarg) : 0) + 3);
++         if(!spec_txt) message(FATAL, "no memory for spec allocation\n");
++         spec_txt[0] = '-';
++         spec_txt[1] = opt;
++         spec_txt[2] = 0;
++         if (optarg) strcat(spec_txt, optarg);
++         specs = parsespecs(spec_txt);
++       } else {
++         usage();
++       }
++       break;
++     default:
++       usage();
++       break;
++     }
++   }
++
++   if (specs == NULL) {
++     if(optind == argc) usage();
++     specs = parsespecs(argv[optind]);
++     optind++;
++   }
++
+    infile = stdin;
+    outfile = stdout;
+-   verbose = 1;
+-   for (program = *argv++; --argc; argv++) {
+-      if (argv[0][0] == '-') {
+-	 switch (argv[0][1]) {
+-	 case 'q':	/* quiet */
+-	    verbose = 0;
+-	    break;
+-	 case 'd':	/* draw borders */
+-	    if (argv[0][2])
+-	       draw = singledimen(*argv+2, argerror, usage);
+-	    else
+-	       draw = 1;
+-	    break;
+-	 case 'b':	/* no bind operator */
+-	    nobinding = 1;
+-	    break;
+-	 case 'w':	/* page width */
+-	    width = singledimen(*argv+2, argerror, usage);
+-	    break;
+-	 case 'h':	/* page height */
+-	    height = singledimen(*argv+2, argerror, usage);
+-	    break;
+-	 case 'p':	/* paper type */
+-	    if ( (paper = findpaper(*argv+2)) != (Paper *)0 ) {
+-	       width = (double)PaperWidth(paper);
+-	       height = (double)PaperHeight(paper);
+-	    } else
+-	      message(FATAL, "paper size '%s' not recognised\n", *argv+2);
+-	    break;
+-	 case 'v':	/* version */
+-	    usage();
+-	 default:
+-	    if (specs == NULL)
+-	       specs = parsespecs(*argv);
+-	    else
+-	       usage();
+-	 }
+-      } else if (specs == NULL)
+-	 specs = parsespecs(*argv);
+-      else if (infile == stdin) {
+-	 if ((infile = fopen(*argv, OPEN_READ)) == NULL)
+-	    message(FATAL, "can't open input file %s\n", *argv);
+-      } else if (outfile == stdout) {
+-	 if ((outfile = fopen(*argv, OPEN_WRITE)) == NULL)
+-	    message(FATAL, "can't open output file %s\n", *argv);
+-      } else usage();
++
++   /* Be defensive */
++   if((argc - optind) < 0 || (argc - optind) > 2) usage();
++
++   if (optind != argc) {
++     /* User specified an input file */
++     if ((infile = fopen(argv[optind], OPEN_READ)) == NULL)
++       message(FATAL, "can't open input file %s\n", argv[optind]);
++     optind++;
++   }
++
++   if (optind != argc) {
++     /* User specified an output file */
++     if ((outfile = fopen(argv[optind], OPEN_WRITE)) == NULL)
++       message(FATAL, "can't open output file %s\n", argv[optind]);
++     optind++;
+    }
+-   if (specs == NULL)
+-      usage();
++
++   if (optind != argc) usage();
++   if (specs == NULL) usage();
++
+ #if defined(MSDOS) || defined(WINNT)
+    if ( infile == stdin ) {
+       int fd = fileno(stdin) ;
+Index: psutils/psutil.c
+===================================================================
+--- psutils.orig/psutil.c
++++ psutils/psutil.c
+@@ -44,10 +44,16 @@ static long *pageptr;
+ 
+ /* list of paper sizes supported */
+ static Paper papersizes[] = {
++   { "a0", 2382, 3369 },	/* 84cm * 118.8cm */
++   { "a1", 1684, 2382 },	/* 59.4cm * 84cm */
++   { "a2", 1191, 1684 },	/* 42cm * 59.4cm */
+    { "a3", 842, 1191 },		/* 29.7cm * 42cm */
+    { "a4", 595, 842 },		/* 21cm * 29.7cm */
+    { "a5", 421, 595 },		/* 14.85cm * 21cm */
+    { "b5", 516, 729 },		/* 18.2cm * 25.72cm */
++   { "A0", 2382, 3369 },	/* 84cm * 118.8cm */
++   { "A1", 1684, 2382 },	/* 59.4cm * 84cm */
++   { "A2", 1191, 1684 },	/* 42cm * 59.4cm */
+    { "A3", 842, 1191 },		/* 29.7cm * 42cm */
+    { "A4", 595, 842 },		/* 21cm * 29.7cm */
+    { "A5", 421, 595 },		/* 14.85cm * 21cm */
+@@ -65,7 +71,7 @@ static Paper papersizes[] = {
+ };
+ 
+ /* return pointer to paper size struct or NULL */
+-Paper* findpaper(char *name)
++Paper* findpaper(const char *name)
+ {
+    Paper *pp;
+    for (pp = papersizes; PaperName(pp); pp++) {
+@@ -132,15 +138,20 @@ FILE *seekable(FILE *fp)
+ /* copy input file from current position upto new position to output file */
+ static int fcopy(long upto)
+ {
+-   long here = ftell(infile);
+-   while (here < upto) {
+-      if ((fgets(buffer, BUFSIZ, infile) == NULL) ||
+-	  (fputs(buffer, outfile) == EOF))
+-	 return(0);
+-      here = ftell(infile);
+-      bytes += strlen(buffer);
+-   }
+-   return (1);
++  long here = ftell(infile);
++  long bytes_left = upto - here;
++
++  while (bytes_left > 0) {
++    size_t rw_result;
++    const size_t numtocopy = (bytes_left > BUFSIZ) ? BUFSIZ : bytes_left;
++    rw_result = fread(buffer, 1, numtocopy, infile);
++    if (rw_result < numtocopy) return (0);
++    rw_result = fwrite(buffer, 1, numtocopy, outfile);
++    if (rw_result < numtocopy) return (0);
++    bytes_left -= numtocopy;
++    bytes += numtocopy;
++  }
++  return (1);
+ }
+ 
+ /* build array of pointers to start/end of pages */
+Index: psutils/psutil.h
+===================================================================
+--- psutils.orig/psutil.h
++++ psutils/psutil.h
+@@ -25,7 +25,7 @@ typedef struct papersize {
+ #define PaperHeight(p) ((p)->height)
+ 
+ /* Definitions for functions found in psutil.c */
+-extern Paper *findpaper(char *name);
++extern Paper *findpaper(const char *name);
+ extern FILE *seekable(FILE *fp);
+ extern void writepage(int p);
+ extern void seekpage(int p);
+Index: psutils/pserror.c
+===================================================================
+--- psutils.orig/pserror.c
++++ psutils/pserror.c
+@@ -24,7 +24,7 @@ extern char *program ;	/* Defined by mai
+ void message(int flags, char *format, ...)
+ {
+   va_list args ;
+-  static column = 0 ;		/* current screen column for message wrap */
++  static int column = 0 ;	/* current screen column for message wrap */
+   char msgbuf[MAX_MESSAGE] ;	/* buffer in which to put the message */
+   char *bufptr = msgbuf ;	/* message buffer pointer */
+ 
+Index: psutils/Makefile
+===================================================================
+--- psutils.orig/Makefile
++++ psutils/Makefile
+@@ -23,7 +23,7 @@ PAPER=a4
+ 
+ # Makefile for PSUtils under Unix
+ 
+-#OS = UNIX
++OS = UNIX
+ prefix=/usr
+ 
+ BINDIR = $(prefix)/bin
+@@ -40,7 +40,7 @@ MANEXT = 1
+ MANDIR = $(prefix)/man/man$(MANEXT)
+ 
+ CC = gcc
+-CFLAGS = -DPAPER=\"$(PAPER)\" -DUNIX -O -Wall
++CCFLAGS = $(CPPFLAGS) $(CFLAGS) $(LDFLAGS)
+ 
+ BIN = psbook psselect pstops epsffit psnup \
+ 	psresize
+@@ -68,12 +68,13 @@ epsffit: epsffit.o pserror.o
+ 	$(CC) $(CCFLAGS) -o epsffit pserror.o epsffit.o
+ 
+ psnup: psnup.o psutil.o psspec.o pserror.o
+-	$(CC) $(CCFLAGS) -o psnup psutil.o psspec.o pserror.o psnup.o
++	$(CC) $(CCFLAGS) -o psnup psutil.o psspec.o pserror.o psnup.o -lpaper
+ 
+ psnup.o: psutil.h patchlev.h psspec.h pserror.h psnup.c
+ 
+ psresize: psresize.o psutil.o pserror.o psspec.o
+-	$(CC) $(CCFLAGS) -o psresize psutil.o psspec.o pserror.o psresize.o
++	$(CC) $(CCFLAGS) -o psresize psutil.o psspec.o pserror.o psresize.o \
++          -lpaper
+ 
+ psresize.o: psutil.h patchlev.h psspec.h pserror.h psresize.c
+ 
+@@ -88,7 +89,7 @@ psselect: psselect.o psutil.o pserror.o
+ psselect.o: psutil.h patchlev.h pserror.h psselect.c
+ 
+ pstops: pstops.o psutil.o psspec.o pserror.o
+-	$(CC) $(CCFLAGS) -o pstops psutil.o psspec.o pserror.o pstops.o
++	$(CC) $(CCFLAGS) -o pstops psutil.o psspec.o pserror.o pstops.o -lpaper
+ 
+ pstops.o: psutil.h patchlev.h psspec.h pserror.h pstops.c
+ 
+Index: psutils/psselect.c
+===================================================================
+--- psutils.orig/psselect.c
++++ psutils/psselect.c
+@@ -11,12 +11,13 @@
+ #include "psutil.h"
+ #include "pserror.h"
+ #include "patchlev.h"
++#include <unistd.h>
+ 
+ char *program ;
+ int pages ;
+ int verbose ;
+-FILE *infile ;
+-FILE *outfile ;
++FILE *infile;
++FILE *outfile;
+ char pagelabel[BUFSIZ] ;
+ int pageno ;
+ 
+@@ -52,6 +53,9 @@ static PageRange *addrange(char *str, Pa
+ {
+    int first=0;
+    int sign;
++
++   if(!str) return NULL;
++
+    sign = (*str == '_' && ++str) ? -1 : 1;
+    if (isdigit(*str)) {
+       first = sign*atoi(str);
+@@ -91,48 +95,70 @@ static PageRange *addrange(char *str, Pa
+ }
+ 
+ 
+-void main(int argc, char *argv[])
++int
++main(int argc, char *argv[])
+ {
++   int opt;
+    int currentpg, maxpage = 0;
+    int even = 0, odd = 0, reverse = 0;
+    int pass, all;
+    PageRange *pagerange = NULL;
+ 
++   verbose = 1;
++   program = *argv;
++
++   while((opt = getopt(argc, argv, "eorqvp:")) != EOF) {
++     switch(opt) {
++     case 'e':	/* even pages */
++       even = 1;
++       break;
++     case 'o':	/* odd pages */
++       odd = 1;
++       break;
++     case 'r':	/* reverse */
++       reverse = 1;
++       break;
++     case 'p':	/* page spec */
++       pagerange = addrange(optarg, pagerange);
++       break;
++     case 'q':	/* quiet */
++       verbose = 0;
++       break;
++     case 'v':	/* version */
++     default:
++       usage();
++       break;
++     }
++   }
++
+    infile = stdin;
+    outfile = stdout;
+-   verbose = 1;
+-   for (program = *argv++; --argc; argv++) {
+-      if (argv[0][0] == '-') {
+-	 switch (argv[0][1]) {
+-	 case 'e':	/* even pages */
+-	    even = 1;
+-	    break;
+-	 case 'o':	/* odd pages */
+-	    odd = 1;
+-	    break;
+-	 case 'r':	/* reverse */
+-	    reverse = 1;
+-	    break;
+-	 case 'p':	/* page spec */
+-	    pagerange = addrange(*argv+2, pagerange);
+-	    break;
+-	 case 'q':	/* quiet */
+-	    verbose = 0;
+-	    break;
+-	 case 'v':	/* version */
+-	 default:
+-	    usage();
+-	 }
+-      } else if (pagerange == NULL && !reverse && !even && !odd) {
+-	 pagerange = addrange(*argv, NULL);
+-      } else if (infile == stdin) {
+-	 if ((infile = fopen(*argv, OPEN_READ)) == NULL)
+-	    message(FATAL, "can't open input file %s\n", *argv);
+-      } else if (outfile == stdout) {
+-	 if ((outfile = fopen(*argv, OPEN_WRITE)) == NULL)
+-	    message(FATAL, "can't open output file %s\n", *argv);
+-      } else usage();
++
++   /* If we haven't gotten a page range yet, we better get one now */
++   if (pagerange == NULL && !reverse && !even && !odd) {
++     pagerange = addrange(argv[optind], NULL);
++     optind++;
+    }
++
++   /* Be defensive */
++   if((argc - optind) < 0 || (argc - optind) > 2) usage();
++
++   if (optind != argc) {
++     /* User specified an input file */
++     if ((infile = fopen(argv[optind], OPEN_READ)) == NULL)
++       message(FATAL, "can't open input file %s\n", argv[optind]);
++     optind++;
++   }
++
++   if (optind != argc) {
++     /* User specified an output file */
++     if ((outfile = fopen(argv[optind], OPEN_WRITE)) == NULL)
++       message(FATAL, "can't open output file %s\n", argv[optind]);
++     optind++;
++   }
++
++   if(optind != argc) usage();
++
+ #if defined(MSDOS) || defined(WINNT)
+    if ( infile == stdin ) {
+       int fd = fileno(stdin) ;
+@@ -145,6 +171,7 @@ void main(int argc, char *argv[])
+          message(FATAL, "can't reset stdout to binary mode\n");
+     }
+ #endif
++
+    if ((infile=seekable(infile))==NULL)
+       message(FATAL, "can't seek input\n");
+ 
+Index: psutils/pstops.man
+===================================================================
+--- psutils.orig/pstops.man
++++ psutils/pstops.man
+@@ -85,15 +85,20 @@ the document, instead of the start.
+ If page \fIspec\fRs are separated by
+ .B \+
+ the pages will be merged into one page; if they are separated by
+-.B \,
++.B ,
+ they will be on separate pages.
+ If there is only one page specification, with
+ .I pageno
+ zero, the \fIpageno\fR may be omitted.
+ 
+-The shift, rotation, and scaling are performed
++The shift, rotation, and scaling are applied
++to the PostScript transformation matrix
+ in that order regardless of which order
+ they appear on the command line.
++The matrix accumulates the individual transformations.
++The effect on the image is to first scale with respect to an origin
++at the lower left corner, then rotate about the same origin, and
++finally shift.
+ .PP
+ The
+ .I \-w
+@@ -108,8 +113,8 @@ clipping path for each page.
+ The 
+ .I \-p
+ option can be used as an alternative, to set the paper size to
+-.B a3, a4, a5, b5, letter, legal, tabloid, statement, executive, folio, quarto
+-or
++.B a0, a1, a2, a3, a4, a5, b5, letter, legal, tabloid, statement,
++executive, folio, quarto or
+ .B 10x14.
+ The default paper size is
+ .B @PAPER@.
+@@ -136,7 +141,7 @@ This section contains some sample re-arr
+ sheet (of A4 paper), the pagespec to use is:
+ .sp
+ .ce
+-2:0L@.7(21cm,0)+1L@.7(21cm,14.85cm)
++"2:0L@.7(21cm,0)+1L@.7(21cm,14.85cm)"
+ .sp
+ To select all of the odd pages in reverse order, use:
+ .sp
+@@ -146,12 +151,12 @@ To select all of the odd pages in revers
+ To re-arrange pages for printing 2-up booklets, use
+ .sp
+ .ce
+-4:-3L@.7(21cm,0)+0L@.7(21cm,14.85cm)
++"4:-3L@.7(21cm,0)+0L@.7(21cm,14.85cm)"
+ .sp
+ for the front sides, and
+ .sp
+ .ce
+-4:1L@.7(21cm,0)+-2L@.7(21cm,14.85cm)
++"4:1L@.7(21cm,0)+-2L@.7(21cm,14.85cm)"
+ .sp
+ for the reverse sides (or join them with a comma for duplex printing).
+ .SH AUTHOR
+Index: psutils/psnup.man
+===================================================================
+--- psutils.orig/psnup.man
++++ psutils/psnup.man
+@@ -61,11 +61,12 @@ to centimeters or inches.
+ The 
+ .I \-p
+ option can be used as an alternative, to set the paper size to
+-.B a3, a4, a5, b5, letter, legal, tabloid, statement, executive, folio, quarto
+-or
++.B a0, a1, a2, a3, a4, a5, b5, letter, legal, tabloid, statement,
++executive, folio, quarto or
+ .B 10x14.
+-The default paper size is
+-.B @PAPER@.
++The default paper size is normally
++.B @PAPER@,
++but on a Debian system, /etc/papersize is consulted.
+ The
+ .I \-W, \-H,
+ and
+Index: psutils/getafm
+===================================================================
+--- psutils.orig/getafm
++++ psutils/getafm
+@@ -1,7 +1,7 @@
+ #!/bin/sh
+ 
+ if [ $# -ne 1 ]; then
+-  echo "usage: $0 font-name | gsnd - >font-name.afm" >&2
++  echo "usage: $0 font-name | gsnd -q - >font-name.afm" >&2
+   exit 1
+ fi
+ 
+@@ -13,6 +13,11 @@ cat << EOF
+ %	getafm 1.00 (c) AJCD
+ % and getafm.ps by an unknown author,
+ %	modified by J. Daniel Smith <dsmith@mailhost.aa.cad.slb.com>
++%
++% modified by Joachim H. Kaiser <jhk@cmpnetmail.com>:
++% - suggest a quiet gs run in usage
++% - get font version info (from 'version', not 'Version')
++% - add copyright field to output
+ 
+ % Metrics dictionary code added by AJCD, 7/6/93
+ 
+@@ -66,8 +71,9 @@ cat << EOF
+ 	(isFixedPitch)(IsFixedPitch) prany
+ 	(UnderlinePosition)dup prany
+ 	(UnderlineThickness)dup prany
+-	(Version)(version) prany
++	(version)(Version) prany
+ 	(Notice)dup prany
++	(Copyright)dup prany
+       pop
+     }
+     {
+Index: psutils/psresize.c
+===================================================================
+--- psutils.orig/psresize.c
++++ psutils/psresize.c
+@@ -15,11 +15,17 @@
+  *              -Ppaper sets the input paper size (width and height) by name
+  */
+ 
++#include <unistd.h>
++
+ #include "psutil.h"
+ #include "psspec.h"
+ #include "pserror.h"
+ #include "patchlev.h"
+ 
++#ifdef DEBIAN
++#include <paper.h>
++#endif
++
+ char *program ;
+ int pages ;
+ int verbose ;
+@@ -46,7 +52,8 @@ static void argerror(void)
+ #define MIN(x,y) ((x) > (y) ? (y) : (x))
+ #define MAX(x,y) ((x) > (y) ? (x) : (y))
+ 
+-void main(int argc, char *argv[])
++int
++main(int argc, char *argv[])
+ {
+    double scale, rscale;			/* page scale */
+    double waste, rwaste;			/* amount wasted */
+@@ -54,10 +61,23 @@ void main(int argc, char *argv[])
+    int rotate;
+    double inwidth = -1;
+    double inheight = -1;
+-   Paper *paper;
++   Paper *paper = NULL;
+    PageSpec *specs;
++   int opt;
+ 
+-#ifdef PAPER
++#ifdef DEBIAN
++   paperinit();
++   {
++     const char *default_size = systempapername();
++     if (!default_size) default_size = defaultpapername ();
++     if (default_size) paper = findpaper(default_size);
++     if (paper) {
++       inwidth = width = (double)PaperWidth(paper);
++       inheight = height = (double)PaperHeight(paper);
++     }
++   }
++   paperdone();
++#elif defined(PAPER)
+    if ( (paper = findpaper(PAPER)) != (Paper *)0 ) {
+       inwidth = width = (double)PaperWidth(paper);
+       inheight = height = (double)PaperHeight(paper);
+@@ -67,53 +87,72 @@ void main(int argc, char *argv[])
+    vshift = hshift = 0;
+    rotate = 0;
+ 
++   verbose = 1;
++
++
++   program = *argv;
++
++   while((opt = getopt(argc, argv,
++                       "qw:h:p:W:H:P:")) != EOF) {
++     switch(opt) {
++
++     case 'q':	/* quiet */
++       verbose = 0;
++       break;
++     case 'w':	/* page width */
++       width = singledimen(optarg, argerror, usage);
++       break;
++     case 'h':	/* page height */
++       height = singledimen(optarg, argerror, usage);
++       break;
++     case 'p':	/* paper type */
++       if ( (paper = findpaper(optarg)) != (Paper *)0 ) {
++         width = (double)PaperWidth(paper);
++         height = (double)PaperHeight(paper);
++       } else
++         message(FATAL, "paper size '%s' not recognised\n", optarg);
++       break;
++     case 'W':	/* input page width */
++       inwidth = singledimen(optarg, argerror, usage);
++       break;
++     case 'H':	/* input page height */
++       inheight = singledimen(optarg, argerror, usage);
++       break;
++     case 'P':	/* input paper type */
++       if ( (paper = findpaper(optarg)) != (Paper *)0 ) {
++         inwidth = (double)PaperWidth(paper);
++         inheight = (double)PaperHeight(paper);
++       } else
++         message(FATAL, "paper size '%s' not recognised\n", optarg);
++       break;
++     case 'v':	/* version */
++     default:
++       usage();
++     }
++   }
++
+    infile = stdin;
+    outfile = stdout;
+-   verbose = 1;
+-   for (program = *argv++; --argc; argv++) {
+-      if (argv[0][0] == '-') {
+-	 switch (argv[0][1]) {
+-	 case 'q':	/* quiet */
+-	    verbose = 0;
+-	    break;
+-	 case 'w':	/* page width */
+-	    width = singledimen(*argv+2, argerror, usage);
+-	    break;
+-	 case 'h':	/* page height */
+-	    height = singledimen(*argv+2, argerror, usage);
+-	    break;
+-	 case 'p':	/* paper type */
+-	    if ( (paper = findpaper(*argv+2)) != (Paper *)0 ) {
+-	       width = (double)PaperWidth(paper);
+-	       height = (double)PaperHeight(paper);
+-	    } else
+-	       message(FATAL, "paper size '%s' not recognised\n", *argv+2);
+-	    break;
+-	 case 'W':	/* input page width */
+-	    inwidth = singledimen(*argv+2, argerror, usage);
+-	    break;
+-	 case 'H':	/* input page height */
+-	    inheight = singledimen(*argv+2, argerror, usage);
+-	    break;
+-	 case 'P':	/* input paper type */
+-	    if ( (paper = findpaper(*argv+2)) != (Paper *)0 ) {
+-	       inwidth = (double)PaperWidth(paper);
+-	       inheight = (double)PaperHeight(paper);
+-	    } else
+-	       message(FATAL, "paper size '%s' not recognised\n", *argv+2);
+-	    break;
+-	 case 'v':	/* version */
+-	 default:
+-	    usage();
+-	 }
+-      } else if (infile == stdin) {
+-	 if ((infile = fopen(*argv, OPEN_READ)) == NULL)
+-	    message(FATAL, "can't open input file %s\n", *argv);
+-      } else if (outfile == stdout) {
+-	 if ((outfile = fopen(*argv, OPEN_WRITE)) == NULL)
+-	    message(FATAL, "can't open output file %s\n", *argv);
+-      } else usage();
++
++   /* Be defensive */
++   if((argc - optind) < 0 || (argc - optind) > 2) usage();
++
++   if (optind != argc) {
++     /* User specified an input file */
++     if ((infile = fopen(argv[optind], OPEN_READ)) == NULL)
++       message(FATAL, "can't open input file %s\n", argv[optind]);
++     optind++;
+    }
++
++   if (optind != argc) {
++     /* User specified an output file */
++     if ((outfile = fopen(argv[optind], OPEN_WRITE)) == NULL)
++       message(FATAL, "can't open output file %s\n", argv[optind]);
++     optind++;
++   }
++
++   if (optind != argc) usage();
++
+ #if defined(MSDOS) || defined(WINNT)
+    if ( infile == stdin ) {
+       int fd = fileno(stdin) ;
+Index: psutils/psbook.c
+===================================================================
+--- psutils.orig/psbook.c
++++ psutils/psbook.c
+@@ -8,6 +8,8 @@
+  *       psbook [-q] [-s<signature>] [infile [outfile]]
+  */
+ 
++#include <unistd.h>
++
+ #include "psutil.h"
+ #include "pserror.h"
+ #include "patchlev.h"
+@@ -32,36 +34,54 @@ static void usage(void)
+ }
+ 
+ 
+-void main(int argc, char *argv[])
++int
++main(int argc, char *argv[])
+ {
+    int signature = 0;
+    int currentpg, maxpage;
++   int opt;
++
++   verbose = 1;
++   program = *argv;
++
++   while((opt = getopt(argc, argv, "vqs:")) != EOF) {
++     switch(opt) {
++     case 's':	/* signature size */
++       signature = atoi(optarg);
++       if (signature < 1 || signature % 4) usage();
++       break;
++     case 'q':	/* quiet */
++       verbose = 0;
++       break;
++     case 'v':	/* version */
++     default:
++       usage();
++       break;
++     }
++   }
+ 
+    infile = stdin;
+    outfile = stdout;
+-   verbose = 1;
+-   for (program = *argv++; --argc; argv++) {
+-      if (argv[0][0] == '-') {
+-	 switch (argv[0][1]) {
+-	 case 's':	/* signature size */
+-	    signature = atoi(*argv+2);
+-	    if (signature < 1 || signature % 4) usage();
+-	    break;
+-	 case 'q':	/* quiet */
+-	    verbose = 0;
+-	    break;
+-	 case 'v':	/* version */
+-	 default:
+-	    usage();
+-	 }
+-      } else if (infile == stdin) {
+-	 if ((infile = fopen(*argv, OPEN_READ)) == NULL)
+-	    message(FATAL, "can't open input file %s\n", *argv);
+-      } else if (outfile == stdout) {
+-	 if ((outfile = fopen(*argv, OPEN_WRITE)) == NULL)
+-	    message(FATAL, "can't open output file %s\n", *argv);
+-      } else usage();
++
++   /* Be defensive */
++   if((argc - optind) < 0 || (argc - optind) > 2) usage();
++
++   if (optind != argc) {
++     /* User specified an input file */
++     if ((infile = fopen(argv[optind], OPEN_READ)) == NULL)
++       message(FATAL, "can't open input file %s\n", argv[optind]);
++     optind++;
++   }
++
++   if (optind != argc) {
++     /* User specified an output file */
++     if ((outfile = fopen(argv[optind], OPEN_WRITE)) == NULL)
++       message(FATAL, "can't open output file %s\n", argv[optind]);
++     optind++;
+    }
++
++   if(optind != argc) usage();
++
+ #if defined(MSDOS) || defined(WINNT)
+    if ( infile == stdin ) {
+       int fd = fileno(stdin) ;
+Index: psutils/epsffit.c
+===================================================================
+--- psutils.orig/epsffit.c
++++ psutils/epsffit.c
+@@ -8,6 +8,7 @@
+  *               -c centres the image in the bounding box given
+  *               -r rotates the image by 90 degrees anti-clockwise
+  *               -a alters the aspect ratio to fit the bounding box
++ *               -m rotate to maximise the size within specified bounding
+  *               -s adds a showpage at the end of the image
+  *
+  * Added filename spec (from Larry Weissman) 5 Feb 93
+@@ -20,6 +21,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <ctype.h>
++#include <unistd.h>
+ 
+ #include "pserror.h"
+ #include "patchlev.h"
+@@ -34,66 +36,76 @@ static void usage(void)
+ {
+    fprintf(stderr, "%s release %d patchlevel %d\n", program, RELEASE, PATCHLEVEL);
+    fprintf(stderr, "Copyright (C) Angus J. C. Duggan, 1991-1995. See file LICENSE for details.\n");
+-   fprintf(stderr, "Usage: %s [-c] [-r] [-a] [-s] llx lly urx ury [infile [outfile]]\n",
++   fprintf(stderr, "Usage: %s [-c] [-r] [-a] [-m] [-s] llx lly urx ury [infile [outfile]]\n",
+ 	   program);
+    exit(1);
+ }
+ 
+-void main(int argc, char **argv)
++int
++main(int argc, char **argv)
+ {
+    int bbfound = 0;              /* %%BoundingBox: found */
+-   int urx, ury, llx, lly;
++   int urx = 0, ury = 0, llx = 0, lly = 0;
+    int furx, fury, fllx, flly;
+    int showpage = 0, centre = 0, rotate = 0, aspect = 0, maximise = 0;
+    char buf[BUFSIZ];
+-   FILE *input;
+-   FILE *output;
++   FILE *input = stdin;
++   FILE *output = stdout;
++   int opt;
++
++   program = *argv;
++
++   while((opt = getopt(argc, argv, "csramv")) != EOF) {
++     switch(opt) {
++     case 'c': centre = 1; break;
++     case 's': showpage = 1; break;
++     case 'r': rotate = 1; break;
++     case 'a': aspect = 1; break;
++     case 'm': maximise = 1; break;
++     case 'v':
++     default:
++       usage();
++       break;
++     }
++   }
+ 
+-   program = *argv++; argc--;
++   if ((argc - optind) < 4 || (argc - optind) > 6) usage();
+ 
+-   while (argc > 0 && argv[0][0] == '-') {
+-      switch (argv[0][1]) {
+-      case 'c': centre = 1; break;
+-      case 's': showpage = 1; break;
+-      case 'r': rotate = 1; break;
+-      case 'a': aspect = 1; break;
+-      case 'm': maximise = 1; break;
+-      case 'v':
+-      default:  usage();
+-      }
+-      argc--;
+-      argv++;
++   fllx = atoi(argv[optind++]);
++   flly = atoi(argv[optind++]);
++   furx = atoi(argv[optind++]);
++   fury = atoi(argv[optind++]);
++
++   /* Be defensive */
++   if((argc - optind) < 0 || (argc - optind) > 2) usage();
++
++   if ((argc - optind) > 0) {
++      if(!(input = fopen(argv[optind], OPEN_READ)))
++	 message(FATAL, "can't open input file %s\n", argv[optind]);
++      optind++;
+    }
+-
+-   if (argc < 4 || argc > 6) usage();
+-   fllx = atoi(argv[0]);
+-   flly = atoi(argv[1]);
+-   furx = atoi(argv[2]);
+-   fury = atoi(argv[3]);
+-
+-   if (argc > 4) {
+-      if(!(input = fopen(argv[4], OPEN_READ)))
+-	 message(FATAL, "can't open input file %s\n", argv[4]);
+-   } else {
+ #if defined(MSDOS) || defined(WINNT)
++   else {
+       int fd = fileno(stdin) ;
+       if ( setmode(fd, O_BINARY) < 0 )
+          message(FATAL, "can't reset stdin to binary mode\n");
+-#endif
+       input = stdin ;
+     }
++#endif
+ 
+-   if (argc > 5) {
+-      if(!(output = fopen(argv[5], OPEN_WRITE)))
+-	 message(FATAL, "can't open output file %s\n", argv[5]);
+-   } else {
++   if ((argc - optind) > 0) {
++      if(!(output = fopen(argv[optind], OPEN_WRITE)))
++	 message(FATAL, "can't open output file %s\n", argv[optind]);
++      optind++;
++   }
+ #if defined(MSDOS) || defined(WINNT)
++   else {
+       int fd = fileno(stdout) ;
+       if ( setmode(fd, O_BINARY) < 0 )
+          message(FATAL, "can't reset stdout to binary mode\n");
+-#endif
+       output = stdout ;
+     }
++#endif
+ 
+    while (fgets(buf, BUFSIZ, input)) {
+       if (buf[0] == '%' && (buf[1] == '%' || buf[1] == '!')) {
+Index: psutils/psresize.man
+===================================================================
+--- psutils.orig/psresize.man
++++ psutils/psresize.man
+@@ -1,6 +1,6 @@
+ .TH PSRESIZE 1 "PSUtils Release @RELEASE@ Patchlevel @PATCHLEVEL@"
+ .SH NAME
+-psresize \- multiple pages per sheet
++psresize \- rescales and centers a document for new output paper size
+ .SH SYNOPSIS
+ .B psresize
+ [
+@@ -42,8 +42,8 @@ to centimeters or inches.
+ The 
+ .I \-p
+ option can be used as an alternative, to set the output paper size to
+-.B a3, a4, a5, b5, letter, legal, tabloid, statement, executive, folio, quarto
+-or
++.B a0, a1, a2, a3, a4, a5, b5, letter, legal, tabloid, statement,
++executive, folio, quarto or
+ .B 10x14.
+ The default output paper size is
+ .B @PAPER@.
+Index: psutils/psnup.c
+===================================================================
+--- psutils.orig/psnup.c
++++ psutils/psnup.c
+@@ -23,11 +23,18 @@
+  * 		-d<wid>	to draw the page boundaries
+  */
+ 
++#include <unistd.h>
++#include <string.h>
++
+ #include "psutil.h"
+ #include "psspec.h"
+ #include "pserror.h"
+ #include "patchlev.h"
+ 
++#ifdef DEBIAN
++#include <paper.h>
++#endif
++
+ char *program ;
+ int pages ;
+ int verbose ;
+@@ -66,21 +73,36 @@ static int nextdiv(int n, int m)
+    return (0);
+ }
+ 
+-void main(int argc, char *argv[])
++int
++main(int argc, char *argv[])
+ {
+-   int horiz, vert, rotate, column, flip, leftright, topbottom;
++   int horiz = 0, vert = 0, rotate = 0, column = 0;
++   int flip = 0, leftright = 0, topbottom = 0;
+    int nup = 1;
+    double draw = 0;				/* draw page borders */
+-   double scale;				/* page scale */
++   double scale = 1.0;				/* page scale */
+    double uscale = 0;				/* user supplied scale */
+    double ppwid, pphgt;				/* paper dimensions */
+    double margin, border;			/* paper & page margins */
+    double vshift, hshift;			/* page centring shifts */
+    double iwidth, iheight ;			/* input paper size */
+    double tolerance = 100000;			/* layout tolerance */
+-   Paper *paper;
++   Paper *paper = NULL;
++   int opt;
+ 
+-#ifdef PAPER
++#ifdef DEBIAN
++   paperinit();
++   {
++     const char *default_size = systempapername();
++     if (!default_size) default_size = defaultpapername ();
++     if (default_size) paper = findpaper(default_size);
++     if (paper) {
++       width = (double)PaperWidth(paper);
++       height = (double)PaperHeight(paper);
++     }
++   }
++   paperdone();
++#elif defined(PAPER)
+    if ( (paper = findpaper(PAPER)) != (Paper *)0 ) {
+       width = (double)PaperWidth(paper);
+       height = (double)PaperHeight(paper);
+@@ -91,105 +113,129 @@ void main(int argc, char *argv[])
+    leftright = topbottom = 1;
+    iwidth = iheight = -1 ;
+ 
++   verbose = 1;
++   program = *argv;
++
++   while((opt =
++          getopt(argc, argv,
++                 "qd::lrfcw:W:h:H:m:b:t:s:p:P:n:1::2::3::4::5::6::7::8::9::"))
++         != EOF) {
++     switch(opt) {
++     case 'q':	/* quiet */
++       verbose = 0;
++       break;
++     case 'd':	/* draw borders */
++       if (optarg)
++         draw = singledimen(optarg, argerror, usage);
++       else
++         draw = 1;
++       break;
++     case 'l':	/* landscape (rotated left) */
++       column = !column;
++       topbottom = !topbottom;
++       break;
++     case 'r':	/* seascape (rotated right) */
++       column = !column;
++       leftright = !leftright;
++       break;
++     case 'f':	/* flipped */
++       flip = 1;
++       break;
++     case 'c':	/* column major layout */
++       column = !column;
++       break;
++     case 'w':	/* page width */
++       width = singledimen(optarg, argerror, usage);
++       break;
++     case 'W':	/* input page width */
++       iwidth = singledimen(optarg, argerror, usage);
++       break;
++     case 'h':	/* page height */
++       height = singledimen(optarg, argerror, usage);
++       break;
++     case 'H':	/* input page height */
++       iheight = singledimen(optarg, argerror, usage);
++       break;
++     case 'm':	/* margins around whole page */
++       margin = singledimen(optarg, argerror, usage);
++       break;
++     case 'b':	/* border around individual pages */
++       border = singledimen(optarg, argerror, usage);
++       break;
++     case 't':	/* layout tolerance */
++       tolerance = atof(optarg);
++       break;
++     case 's':	/* override scale */
++       uscale = atof(optarg);
++       break;
++     case 'p':	/* output (and by default input) paper type */
++       if ( (paper = findpaper(optarg)) != (Paper *)0 ) {
++         width = (double)PaperWidth(paper);
++         height = (double)PaperHeight(paper);
++       } else
++         message(FATAL, "paper size '%s' not recognised\n", optarg);
++       break;
++     case 'P':	/* paper type */
++       if ( (paper = findpaper(optarg)) != (Paper *)0 ) {
++         iwidth = (double)PaperWidth(paper);
++         iheight = (double)PaperHeight(paper);
++       } else
++         message(FATAL, "paper size '%s' not recognised\n", optarg);
++       break;
++     case 'n':	/* n-up, for compatibility with other psnups */
++       if ((nup = atoi(optarg)) < 1)
++         message(FATAL, "-n %d too small\n", nup);
++       break;
++     case '1':
++     case '2':
++     case '3':
++     case '4':
++     case '5':
++     case '6':
++     case '7':
++     case '8':
++     case '9':
++       if(optarg) {
++         char *valuestr = (char *) malloc(strlen(optarg) + 2);
++         valuestr[0] = opt;
++         strcpy(&(valuestr[1]), optarg);
++
++         /* really should check that valuestr is only digits here...*/
++         if ((nup = atoi(valuestr)) < 1)
++           message(FATAL, "-n %d too small\n", nup);
++         free(valuestr);
++       } else {
++         nup = (opt - '0');
++       }
++       break;
++     case 'v':	/* version */
++     default:
++       usage();
++     }
++   }
++
+    infile = stdin;
+    outfile = stdout;
+-   verbose = 1;
+-   for (program = *argv++; --argc; argv++) {
+-      if (argv[0][0] == '-') {
+-	 switch (argv[0][1]) {
+-	 case 'q':	/* quiet */
+-	    verbose = 0;
+-	    break;
+-	 case 'd':	/* draw borders */
+-	    if (argv[0][2])
+-	       draw = singledimen(*argv+2, argerror, usage);
+-	    else
+-	       draw = 1;
+-	    break;
+-	 case 'l':	/* landscape (rotated left) */
+-	    column = !column;
+-	    topbottom = !topbottom;
+-	    break;
+-	 case 'r':	/* seascape (rotated right) */
+-	    column = !column;
+-	    leftright = !leftright;
+-	    break;
+-	 case 'f':	/* flipped */
+-	    flip = 1;
+-	    break;
+-	 case 'c':	/* column major layout */
+-	    column = !column;
+-	    break;
+-	 case 'w':	/* page width */
+-	    width = singledimen(*argv+2, argerror, usage);
+-	    break;
+-	 case 'W':	/* input page width */
+-	    iwidth = singledimen(*argv+2, argerror, usage);
+-	    break;
+-	 case 'h':	/* page height */
+-	    height = singledimen(*argv+2, argerror, usage);
+-	    break;
+-	 case 'H':	/* input page height */
+-	    iheight = singledimen(*argv+2, argerror, usage);
+-	    break;
+-	 case 'm':	/* margins around whole page */
+-	    margin = singledimen(*argv+2, argerror, usage);
+-	    break;
+-	 case 'b':	/* border around individual pages */
+-	    border = singledimen(*argv+2, argerror, usage);
+-	    break;
+-	 case 't':	/* layout tolerance */
+-	    tolerance = atof(*argv+2);
+-	    break;
+-	 case 's':	/* override scale */
+-	    uscale = atof(*argv+2);
+-	    break;
+-	 case 'p':	/* output (and by default input) paper type */
+-	    if ( (paper = findpaper(*argv+2)) != (Paper *)0 ) {
+-	       width = (double)PaperWidth(paper);
+-	       height = (double)PaperHeight(paper);
+-	    } else
+-	       message(FATAL, "paper size '%s' not recognised\n", *argv+2);
+-	    break;
+-	 case 'P':	/* paper type */
+-	    if ( (paper = findpaper(*argv+2)) != (Paper *)0 ) {
+-	       iwidth = (double)PaperWidth(paper);
+-	       iheight = (double)PaperHeight(paper);
+-	    } else
+-	       message(FATAL, "paper size '%s' not recognised\n", *argv+2);
+-	    break;
+-	 case 'n':	/* n-up, for compatibility with other psnups */
+-	    if (argc >= 2) {
+-	       argv++;
+-	       argc--;
+-	       if ((nup = atoi(*argv)) < 1)
+-		  message(FATAL, "-n %d too small\n", nup);
+-	    } else
+-	       message(FATAL, "argument expected for -n\n");
+-	    break;
+-	 case '1':
+-	 case '2':
+-	 case '3':
+-	 case '4':
+-	 case '5':
+-	 case '6':
+-	 case '7':
+-	 case '8':
+-	 case '9':
+-	    nup = atoi(*argv+1);
+-	    break;
+-	 case 'v':	/* version */
+-	 default:
+-	    usage();
+-	 }
+-      } else if (infile == stdin) {
+-	 if ((infile = fopen(*argv, OPEN_READ)) == NULL)
+-	    message(FATAL, "can't open input file %s\n", *argv);
+-      } else if (outfile == stdout) {
+-	 if ((outfile = fopen(*argv, OPEN_WRITE)) == NULL)
+-	    message(FATAL, "can't open output file %s\n", *argv);
+-      } else usage();
++
++   /* Be defensive */
++   if((argc - optind) < 0 || (argc - optind) > 2) usage();
++
++   if (optind != argc) {
++     /* User specified an input file */
++     if ((infile = fopen(argv[optind], OPEN_READ)) == NULL)
++       message(FATAL, "can't open input file %s\n", argv[optind]);
++     optind++;
+    }
++
++   if (optind != argc) {
++     /* User specified an output file */
++     if ((outfile = fopen(argv[optind], OPEN_WRITE)) == NULL)
++       message(FATAL, "can't open output file %s\n", argv[optind]);
++     optind++;
++   }
++
++   if (optind != argc) usage();
++
+ #if defined(MSDOS) || defined(WINNT)
+    if ( infile == stdin ) {
+       int fd = fileno(stdin) ;

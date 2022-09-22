@@ -1,0 +1,3 @@
+version=3
+opts="uversionmangle=s/^/1./ dversionmangle=s/\.dfsg$//" \
+ ftp://ftp.knackered.org/pub/psutils/psutils-p(\d+).tar.gz

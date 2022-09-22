@@ -1,0 +1,38 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
+include /usr/share/dpkg/architecture.mk
+ifeq ($(origin CC),default)
+CC = $(DEB_HOST_GNU_TYPE)-gcc
+endif
+
+# Include cdbs rules files.
+include /usr/share/cdbs/1/class/makefile.mk
+include /usr/share/cdbs/1/rules/debhelper.mk
+
+CURDIR := $(shell pwd)
+DEB_MAKE_CLEAN_TARGET = realclean
+DEB_MAKE_BUILD_TARGET = prefix=/usr CC=$(CC) all
+DEB_MAKE_INSTALL_TARGET = prefix=$(CURDIR)/debian/psutils/usr \
+	  MANDIR=$(CURDIR)/debian/psutils/usr/share/man/man1 \
+	  install
+
+CPPFLAGS += -DDEBIAN -DUNIX
+VERSION := $(shell dpkg-parsechangelog | \
+             awk '/Version:/ {print $$2}' | cut -d- -f 1)
+
+clean::
+	$(RM) showchar.1
+
+common-install-prehook-arch::
+	mkdir -p debian/psutils/usr/bin \
+		debian/psutils/usr/lib \
+		debian/psutils/usr/share/man/man1 \
+
+install/psutils::
+	cp psjoin debian/psutils/usr/bin
+	chmod +x debian/psutils/usr/bin/psjoin
+	cp psjoin.1 debian/psutils/usr/share/man/man1

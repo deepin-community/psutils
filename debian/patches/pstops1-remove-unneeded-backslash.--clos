@@ -1,0 +1,19 @@
+From: Bjarni Ingi Gislason <bjarniig@rhi.hi.is>
+Date: Sat, 21 Jan 2017 19:31:30 +0000
+X-Dgit-Generated: 1.17.dfsg-4 171ae6f299fa52083cfc12441155ef5d6cbcafd0
+Subject: pstops(1): Remove unneeded backslash.  Closes:#726468.
+
+
+---
+
+--- psutils-1.17.dfsg.orig/pstops.man
++++ psutils-1.17.dfsg/pstops.man
+@@ -84,7 +84,7 @@ If the optional minus sign is specified,
+ the document, instead of the start.
+ 
+ If page \fIspec\fRs are separated by
+-.B \+
++.B +
+ the pages will be merged into one page; if they are separated by
+ .B ,
+ they will be on separate pages.

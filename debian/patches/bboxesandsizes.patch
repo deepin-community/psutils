@@ -1,0 +1,311 @@
+Index: psutils-1.17.dfsg/psutil.c
+===================================================================
+--- psutils-1.17.dfsg.orig/psutil.c	2012-08-25 06:25:32.961367859 -0400
++++ psutils-1.17.dfsg/psutil.c	2012-08-25 06:25:33.273367851 -0400
+@@ -135,11 +135,28 @@
+ }
+ 
+ 
+-/* copy input file from current position upto new position to output file */
+-static int fcopy(long upto)
++/* copy input file from current position upto new position to output file,
++ * ignoring the lines starting at something ignorelist points to */
++static int fcopy(long upto, long *ignorelist)
+ {
+   long here = ftell(infile);
+-  long bytes_left = upto - here;
++  long bytes_left;
++
++  if (ignorelist != NULL) {
++    while (*ignorelist > 0 && *ignorelist < here)
++      ignorelist++;
++
++    while (*ignorelist > 0 && *ignorelist < upto) {
++      int r = fcopy(*ignorelist, NULL);
++      if (!r || fgets(buffer, BUFSIZ, infile) == NULL)
++	return 0;
++      ignorelist++;
++      here = ftell(infile);
++      while (*ignorelist > 0 && *ignorelist < here)
++	ignorelist++;
++    }
++  }
++  bytes_left = upto - here;
+ 
+   while (bytes_left > 0) {
+     size_t rw_result;
+@@ -155,12 +172,15 @@
+ }
+ 
+ /* build array of pointers to start/end of pages */
+-void scanpages(void)
++void scanpages(long *sizeheaders)
+ {
+    register char *comment = buffer+2;
+    register int nesting = 0;
+    register long int record;
+ 
++   if (sizeheaders)
++     *sizeheaders = 0;
++
+    if ((pageptr = (long *)malloc(sizeof(long)*maxpages)) == NULL)
+       message(FATAL, "out of memory\n");
+    pages = 0;
+@@ -176,6 +196,26 @@
+ 		     message(FATAL, "out of memory\n");
+ 	       }
+ 	       pageptr[pages++] = record;
++	    } else if (headerpos == 0 && iscomment(comment, "BoundingBox:")) {
++	       if (sizeheaders) {
++		  *(sizeheaders++) = record;
++		  *sizeheaders = 0;
++	       }
++	    } else if (headerpos == 0 && iscomment(comment, "HiResBoundingBox:")) {
++	       if (sizeheaders) {
++		  *(sizeheaders++) = record;
++		  *sizeheaders = 0;
++	       }
++	    } else if (headerpos == 0 && iscomment(comment,"DocumentPaperSizes:")) {
++	       if (sizeheaders) {
++		  *(sizeheaders++) = record;
++		  *sizeheaders = 0;
++	       }
++	    } else if (headerpos == 0 && iscomment(comment,"DocumentMedia:")) {
++	       if (sizeheaders) {
++		  *(sizeheaders++) = record;
++		  *sizeheaders = 0;
++	       }
+ 	    } else if (headerpos == 0 && iscomment(comment, "Pages:"))
+ 	       pagescmt = record;
+ 	    else if (headerpos == 0 && iscomment(comment, "EndComments"))
+@@ -279,7 +319,7 @@
+ /* write the body of a page */
+ void writepagebody(int p)
+ {
+-   if (!fcopy(pageptr[p+1]))
++   if (!fcopy(pageptr[p+1], NULL))
+       message(FATAL, "I/O error writing page %d\n", outputpage);
+ }
+ 
+@@ -292,23 +332,34 @@
+ }
+ 
+ /* write from start of file to end of header comments */
+-void writeheader(int p)
++void writeheader(int p, long *ignore)
++{
++   writeheadermedia(p, ignore, -1, -1);
++}
++
++void writeheadermedia(int p, long *ignore, double width, double height)
+ {
+    fseek(infile, 0L, SEEK_SET);
+    if (pagescmt) {
+-      if (!fcopy(pagescmt) || fgets(buffer, BUFSIZ, infile) == NULL)
++      if (!fcopy(pagescmt, ignore) || fgets(buffer, BUFSIZ, infile) == NULL)
+ 	 message(FATAL, "I/O error in header\n");
++      if (width > -1 && height > -1) {
++         sprintf(buffer, "%%%%DocumentMedia: plain %d %d 0 () ()\n", (int) width, (int) height);
++         writestring(buffer);
++         sprintf(buffer, "%%%%BoundingBox: 0 0 %d %d\n", (int) width, (int) height);
++         writestring(buffer);
++      }
+       sprintf(buffer, "%%%%Pages: %d 0\n", p);
+       writestring(buffer);
+    }
+-   if (!fcopy(headerpos))
++   if (!fcopy(headerpos, ignore))
+       message(FATAL, "I/O error in header\n");
+ }
+ 
+ /* write prologue to end of setup section excluding PStoPS procset */
+ int writepartprolog(void)
+ {
+-   if (beginprocset && !fcopy(beginprocset))
++   if (beginprocset && !fcopy(beginprocset, NULL))
+       message(FATAL, "I/O error in prologue\n");
+    if (endprocset)
+       fseek(infile, endprocset, SEEK_SET);
+@@ -319,14 +370,14 @@
+ /* write prologue up to end of setup section */
+ void writeprolog(void)
+ {
+-   if (!fcopy(endsetup))
++   if (!fcopy(endsetup, NULL))
+       message(FATAL, "I/O error in prologue\n");
+ }
+ 
+ /* write from end of setup to start of pages */
+ void writesetup(void)
+ {
+-   if (!fcopy(pageptr[0]))
++   if (!fcopy(pageptr[0], NULL))
+       message(FATAL, "I/O error in prologue\n");
+ }
+ 
+Index: psutils-1.17.dfsg/psutil.h
+===================================================================
+--- psutils-1.17.dfsg.orig/psutil.h	2012-08-25 06:25:32.965367859 -0400
++++ psutils-1.17.dfsg/psutil.h	2012-08-25 06:25:33.273367851 -0400
+@@ -32,13 +32,14 @@
+ extern void writepageheader(char *label, int p);
+ extern void writepagesetup(void);
+ extern void writepagebody(int p);
+-extern void writeheader(int p);
++extern void writeheader(int p, long *ignorelist);
++extern void writeheadermedia(int p, long *ignorelist, double width, double height);
+ extern int writepartprolog(void);
+ extern void writeprolog(void);
+ extern void writesetup(void);
+ extern void writetrailer(void);
+ extern void writeemptypage(void);
+-extern void scanpages(void);
++extern void scanpages(long *sizeheaders);
+ extern void writestring(char *s);
+ 
+ /* These variables are imported from the client program (e.g. psbook, psnup,
+Index: psutils-1.17.dfsg/psbook.c
+===================================================================
+--- psutils-1.17.dfsg.orig/psbook.c	2012-08-25 06:25:32.977367859 -0400
++++ psutils-1.17.dfsg/psbook.c	2012-08-25 06:25:33.273367851 -0400
+@@ -97,7 +97,7 @@
+    if ((infile=seekable(infile))==NULL)
+       message(FATAL, "can't seek input\n");
+ 
+-   scanpages();
++   scanpages(NULL);
+ 
+    if (!signature)
+       signature = maxpage = pages+(4-pages%4)%4;
+@@ -105,7 +105,7 @@
+       maxpage = pages+(signature-pages%signature)%signature;
+ 
+    /* rearrange pages */
+-   writeheader(maxpage);
++   writeheader(maxpage, NULL);
+    writeprolog();
+    writesetup();
+    for (currentpg = 0; currentpg < maxpage; currentpg++) {
+Index: psutils-1.17.dfsg/psselect.c
+===================================================================
+--- psutils-1.17.dfsg.orig/psselect.c	2012-08-25 06:25:32.965367859 -0400
++++ psutils-1.17.dfsg/psselect.c	2012-08-25 06:25:33.273367851 -0400
+@@ -175,7 +175,7 @@
+    if ((infile=seekable(infile))==NULL)
+       message(FATAL, "can't seek input\n");
+ 
+-   scanpages();
++   scanpages(NULL);
+ 
+    /* select all pages or all in range if odd or even not set */
+    all = !(odd || even);
+@@ -224,7 +224,7 @@
+    for (pass = 0; pass < 2; pass++) {
+       PageRange *r;
+       if (pass) {                           /* write header on second pass */
+-	 writeheader(maxpage);
++	 writeheader(maxpage, NULL);
+ 	 writeprolog();
+ 	 writesetup();
+       }
+Index: psutils-1.17.dfsg/psspec.h
+===================================================================
+--- psutils-1.17.dfsg.orig/psspec.h	2012-08-25 06:25:29.165367961 -0400
++++ psutils-1.17.dfsg/psspec.h	2012-08-25 06:25:33.273367851 -0400
+@@ -28,3 +28,5 @@
+ 			  void (*usagefn)(void));
+ extern void pstops(int modulo, int pps, int nobind, PageSpec *specs,
+ 		   double draw);
++extern void pstops_write(int modulo, int pps, int nobind, PageSpec *specs,
++                         double draw, long *ignorelist);
+Index: psutils-1.17.dfsg/psresize.c
+===================================================================
+--- psutils-1.17.dfsg.orig/psresize.c	2012-08-25 06:25:32.977367859 -0400
++++ psutils-1.17.dfsg/psresize.c	2012-08-25 06:25:33.273367851 -0400
+@@ -61,6 +61,7 @@
+    int rotate;
+    double inwidth = -1;
+    double inheight = -1;
++   long sizeheaders[20];			/* headers to remove */
+    Paper *paper = NULL;
+    PageSpec *specs;
+    int opt;
+@@ -171,6 +172,8 @@
+    if (width <= 0 || height <= 0)
+       message(FATAL, "output page width and height must be set\n");
+ 
++   scanpages(sizeheaders);
++
+    if (inwidth <= 0 || inheight <= 0)
+       message(FATAL, "input page width and height must be set\n");
+ 
+@@ -212,7 +215,7 @@
+    specs->yoff = vshift;
+    specs->flags |= OFFSET;
+       
+-   pstops(1, 1, 0, specs, 0.0);		/* do page rearrangement */
++   pstops_write(1, 1, 0, specs, 0.0, sizeheaders); /* do page rearrangement */
+ 
+    exit(0);
+ }
+Index: psutils-1.17.dfsg/psnup.c
+===================================================================
+--- psutils-1.17.dfsg.orig/psnup.c	2012-08-25 06:25:32.981367857 -0400
++++ psutils-1.17.dfsg/psnup.c	2012-08-25 06:25:33.273367851 -0400
+@@ -88,6 +88,7 @@
+    double iwidth, iheight ;			/* input paper size */
+    double tolerance = 100000;			/* layout tolerance */
+    Paper *paper = NULL;
++   long sizeheaders[20];			/* headers to remove */
+    int opt;
+ 
+ #ifdef DEBIAN
+@@ -261,6 +262,8 @@
+    if (ppwid <= 0 || pphgt <= 0)
+       message(FATAL, "paper margins are too large\n");
+ 
++   scanpages(sizeheaders);
++
+    /* set default values of input height & width */
+    if ( iwidth > 0 )
+      width = iwidth ;
+@@ -374,7 +377,7 @@
+ 	 }
+       }
+       
+-      pstops(nup, 1, 0, specs, draw);		/* do page rearrangement */
++      pstops_write(nup, 1, 0, specs, draw, sizeheaders); /* do page rearrangement */
+    }
+ 
+    exit(0);
+Index: psutils-1.17.dfsg/psspec.c
+===================================================================
+--- psutils-1.17.dfsg.orig/psspec.c	2012-08-25 06:25:32.861367862 -0400
++++ psutils-1.17.dfsg/psspec.c	2012-08-25 06:25:33.277367851 -0400
+@@ -137,18 +137,22 @@
+    NULL
+    };
+ 
+-void pstops(int modulo, int pps, int nobind, PageSpec *specs, double draw)
++void pstops(int modulo, int pps, int nobind, PageSpec *specs, double draw) {
++
++  scanpages(NULL);
++  pstops_write(modulo, pps, nobind, specs, draw, NULL);
++}
++
++void pstops_write(int modulo, int pps, int nobind, PageSpec *specs, double draw, long *ignorelist)
+ {
+    int thispg, maxpage;
+    int pageindex = 0;
+    char **pro;
+ 
+-   scanpages();
+-
+    maxpage = ((pages+modulo-1)/modulo)*modulo;
+ 
+    /* rearrange pages: doesn't cope properly with loaded definitions */
+-   writeheader((maxpage/modulo)*pps);
++   writeheadermedia((maxpage/modulo)*pps, ignorelist, width, height);
+ #ifndef SHOWPAGE_LOAD
+    writestring("%%BeginProcSet: PStoPS");
+ #else

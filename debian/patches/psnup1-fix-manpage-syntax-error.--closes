@@ -1,0 +1,19 @@
+From: Bjarni Ingi Gislason <bjarniig@rhi.hi.is>
+Date: Sat, 21 Jan 2017 19:15:58 +0000
+X-Dgit-Generated: 1.17.dfsg-4 7258909993a99334740443749705dd921bb8a8fc
+Subject: psnup(1): Fix manpage syntax error.  Closes:#663258.
+
+
+---
+
+--- psutils-1.17.dfsg.orig/psnup.man
++++ psutils-1.17.dfsg/psnup.man
+@@ -125,7 +125,7 @@ tries to optimise the layout so that the
+ .I psnup
+ cannot find a layout within its tolerance limit, it will abort with an error
+ message. The alternative form
+-.I \i \fInup\fR
++.I \-i \fInup\fR
+ can also be used, for compatibility with other n-up programs.
+ .PP
+ .I Psnup

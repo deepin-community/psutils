@@ -1,0 +1,23 @@
+From: Reuben Thomas <rrt@sc3d.org>
+Date: Sat, 21 Jan 2017 19:37:28 +0000
+X-Dgit-Generated: 1.17.dfsg-4 45990e7c75dde21ad20a9e6e22b2d8e980b92459
+Subject: psnup(1): Remove a confusing and unnecessary qualification about units.
+
+Apropos of #695179.
+
+---
+
+--- psutils-1.17.dfsg.orig/psnup.man
++++ psutils-1.17.dfsg/psnup.man
+@@ -54,10 +54,7 @@ option gives the paper height,
+ normally specified in
+ .B "cm"
+ or
+-.B "in"
+-to convert 
+-PostScript's points (1/72 of an inch)
+-to centimeters or inches.
++.BR "in" .
+ The 
+ .I \-p
+ option can be used as an alternative, to set the paper size to

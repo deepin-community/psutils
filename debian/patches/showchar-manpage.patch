@@ -1,0 +1,55 @@
+Index: psutils-1.17.dfsg/Makefile
+===================================================================
+--- psutils-1.17.dfsg.orig/Makefile	2012-08-25 06:25:32.965367859 -0400
++++ psutils-1.17.dfsg/Makefile	2012-08-25 06:25:33.529367844 -0400
+@@ -53,7 +53,8 @@
+ 	psresize.$(MANEXT) psmerge.$(MANEXT) fixscribeps.$(MANEXT) getafm.$(MANEXT) \
+ 	fixdlsrps.$(MANEXT) fixfmps.$(MANEXT) fixpsditps.$(MANEXT) \
+ 	fixpspps.$(MANEXT) fixtpps.$(MANEXT) fixwfwps.$(MANEXT) fixwpps.$(MANEXT) \
+-	fixwwps.$(MANEXT) extractres.$(MANEXT) includeres.$(MANEXT)
++	fixwwps.$(MANEXT) extractres.$(MANEXT) includeres.$(MANEXT) \
++	showchar.$(MANEXT)
+ 
+ all: $(BIN) $(PERLSCRIPTS) $(MANPAGES) $(SHELLSCRIPTS)
+ 
+@@ -205,6 +206,9 @@
+ getafm.$(MANEXT): getafm.man
+ 	$(PERL) maketext "MAN=$(MANPAGES)" $? > $@
+ 
++showchar.$(MANEXT): showchar.man
++	$(PERL) maketext "MAN=$(MANPAGES)" $? > $@
++
+ clean:
+ 	rm -f *.o
+ 
+Index: psutils-1.17.dfsg/showchar.man
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ psutils-1.17.dfsg/showchar.man	2012-08-25 06:25:33.545367841 -0400
+@@ -0,0 +1,26 @@
++.TH SHOWCHAR 1 "PSUtils Release @RELEASE@ Patchlevel @PATCHLEVEL@"
++.SH NAME
++showchar \- show character with information
++.SH SYNOPSIS
++.B showchar
++[
++.B fontname
++] [
++.B charname
++]
++.SH DESCRIPTION
++This manual page was written for the Debian GNU/Linux distribution
++because the original program does not have a manual page.
++.PP
++.B showchar
++outputs PostScript to draw a character with metric info.
++.SH AUTHOR
++Copyright (C) Angus J. C. Duggan 1991-1995
++.PP
++This manual page was written by Uwe Hermann <uh1763@hermann-uwe.de>,
++for the Debian GNU/Linux system (but may be used by others).
++.SH TRADEMARKS
++.B PostScript
++is a trademark of Adobe Systems Incorporated.
++.SH "SEE ALSO"
++@MAN@

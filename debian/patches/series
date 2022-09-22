@@ -1,0 +1,14 @@
+remove-fixmacps.patch
+gnome-printing.patch
+misc.patch
+psmerge-manpage.patch
+bboxesandsizes.patch
+psmerge.patch
+showchar-manpage.patch
+off_t.patch
+psutils-flip.patch
+psjoin.patch
+psnup1-fix-manpage-syntax-error.--closes
+psmerge-use-ps2write
+pstops1-remove-unneeded-backslash.--clos
+psnup1-remove-a-confusing-and-unnecessar

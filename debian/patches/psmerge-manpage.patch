@@ -1,0 +1,14 @@
+Index: psutils-1.17.dfsg/psmerge.man
+===================================================================
+--- psutils-1.17.dfsg.orig/psmerge.man	2012-08-25 06:25:29.181367959 -0400
++++ psutils-1.17.dfsg/psmerge.man	2012-08-25 06:25:33.169367852 -0400
+@@ -6,9 +6,7 @@
+ [
+ .B \-o\fIout.ps\fB
+ ]
+-[
+ .I file.ps ...
+-]
+ .SH DESCRIPTION
+ .I Psmerge
+ merges PostScript documents into a single document. It only works in the

@@ -1,0 +1,30 @@
+Index: psutils-1.17.dfsg/psspec.c
+===================================================================
+--- psutils-1.17.dfsg.orig/psspec.c	2012-08-25 06:25:29.285367958 -0400
++++ psutils-1.17.dfsg/psspec.c	2012-08-25 06:25:32.861367862 -0400
+@@ -93,10 +93,13 @@
+ 
+ static char *prologue[] = { /* PStoPS procset */
+ #ifndef SHOWPAGE_LOAD
++   /* Wrap these up with our own versions.  We have to  */
+    "userdict begin",
+-   "[/showpage/erasepage/copypage]{dup where{pop dup load",	/* prevent */
+-   " type/operatortype eq{1 array cvx dup 0 3 index cvx put",	/* binding */
+-   " bind def}{pop}ifelse}{pop}ifelse}forall",			/* in prolog */
++   "[/showpage/erasepage/copypage]{dup where{pop dup load",
++   " type/operatortype eq{ /PStoPSenablepage cvx 1 index"
++   " load 1 array astore cvx {} bind /ifelse cvx 4 array"
++   " astore cvx def}{pop}ifelse}{pop}ifelse}forall"
++   " /PStoPSenablepage true def",
+ #else
+    "userdict begin",
+    "[/showpage/copypage/erasepage]{dup 10 string cvs dup",
+@@ -228,7 +231,7 @@
+ 	 }
+ 	 if (add_next) {
+ #ifndef SHOWPAGE_LOAD
+-	    writestring("/showpage{}def/copypage{}def/erasepage{}def\n");
++	    writestring("/PStoPSenablepage false def\n");
+ #else
+ 	    writestring("/PStoPSshowpage{}store/PStoPScopypage{}store/PStoPSerasepage{}store\n");
+ #endif
